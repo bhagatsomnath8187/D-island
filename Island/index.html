@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Island — everything in one pill</title>
+<style>
+  :root{
+    --bg:#000; --ink:#f5f5f7; --dim:#8e8e93; --card:rgba(255,255,255,.07);
+    --card2:rgba(255,255,255,.12); --line:rgba(255,255,255,.1);
+    --accent:#0a84ff; --green:#30d158; --red:#ff453a; --orange:#ff9f0a;
+    --pill-h:34px; --sat:env(safe-area-inset-top,0px);
+  }
+  [data-theme="light"]{
+    --bg:#e8e8ed; --ink:#111; --dim:#6e6e73; --card:rgba(0,0,0,.06);
+    --card2:rgba(0,0,0,.11); --line:rgba(0,0,0,.12);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.45 -apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+    overflow:hidden; touch-action:manipulation; user-select:none; -webkit-user-select:none;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  input,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:8px 10px;outline:none;width:100%}
+  input:focus{border-color:var(--accent)}
+
+  /* ===== stage / wallpaper ===== */
+  #stage{position:fixed;inset:0;overflow:hidden}
+  #wallpaper{position:absolute;inset:-10%;
+    background:
+      radial-gradient(60% 50% at 20% 15%, #3a2a6d 0%, transparent 60%),
+      radial-gradient(55% 45% at 80% 25%, #0a4d6e 0%, transparent 60%),
+      radial-gradient(70% 60% at 50% 85%, #6d2445 0%, transparent 65%),
+      radial-gradient(40% 35% at 75% 70%, #245c3a 0%, transparent 70%),
+      #060608;
+    animation:drift 40s ease-in-out infinite alternate; filter:saturate(1.05);
+  }
+  [data-theme="light"] #wallpaper{opacity:.35}
+  @keyframes drift{from{transform:scale(1) rotate(0deg)}to{transform:scale(1.12) rotate(2.5deg)}}
+
+  /* ===== mock status bar ===== */
+  #statusbar{position:absolute;top:calc(var(--sat) + 6px);left:0;right:0;height:18px;
+    display:flex;justify-content:space-between;align-items:center;padding:0 30px;
+    font-size:12.5px;font-weight:600;color:#fff;z-index:5;pointer-events:none}
+  [data-theme="light"] #statusbar{color:#111}
+  #sb-icons{display:flex;gap:5px;align-items:center;font-size:11px}
+
+  /* ===== island ===== */
+  #island{
+    position:absolute;left:50%;top:calc(var(--sat) + 30px);
+    transform:translateX(-50%);
+    background:#000;color:#f5f5f7;
+    border-radius:999px;
+    width:158px;height:var(--pill-h);
+    overflow:hidden;z-index:20;
+    box-shadow:0 10px 40px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.09);
+    transition:width .55s cubic-bezier(.32,1.25,.35,1), height .55s cubic-bezier(.32,1.25,.35,1),
+               border-radius .55s cubic-bezier(.32,1.25,.35,1);
+    display:flex;flex-direction:column;
+  }
+  #island::after{content:"";position:absolute;inset:-8px} /* generous tap slop on pill */
+  #pill{min-width:0}
+  #island.expanded{border-radius:38px;box-shadow:0 24px 80px rgba(0,0,0,.7), 0 0 0 .5px rgba(255,255,255,.12)}
+
+  /* compact pill */
+  #pill{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    gap:7px;padding:0 24px 0 16px;white-space:nowrap;transition:opacity .18s;cursor:pointer}
+  #island.expanded #pill{opacity:0;pointer-events:none}
+  #pill .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  #pill .cam{position:absolute;right:14px;top:50%;transform:translateY(-50%);
+    width:9px;height:9px;border-radius:50%;background:#111;box-shadow:inset 0 0 2px 1px #0c2c4d}
+  #pillMain{display:flex;align-items:center;gap:7px;overflow:hidden;max-width:100%}
+  #pillText{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;max-width:none}
+  #pillSub{font-size:10px;color:#98989d;overflow:hidden;text-overflow:ellipsis;max-width:none;flex:1 1 auto}
+  #pillBar{position:absolute;left:16px;right:30px;bottom:4px;height:2px;border-radius:2px;
+    background:rgba(255,255,255,.14);display:none}
+  #pillBar i{display:block;height:100%;border-radius:2px;background:var(--accent);width:0%}
+  #island.has-activity #pillBar{display:block}
+  .eq{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
+  .eq i{width:2.5px;background:var(--green);border-radius:2px;animation:eq .9s ease-in-out infinite}
+  .eq i:nth-child(2){animation-delay:.25s}.eq i:nth-child(3){animation-delay:.5s}
+  @keyframes eq{0%,100%{height:3px}50%{height:12px}}
+  .eq.paused i{animation-play-state:paused;height:3px}
+
+  /* expanded body */
+  #body{position:absolute;inset:0;display:flex;flex-direction:column;opacity:0;pointer-events:none;
+    transition:opacity .3s .18s}
+  #island.expanded #body{opacity:1;pointer-events:auto}
+  #bodyHead{display:flex;align-items:center;justify-content:space-between;
+    padding:18px 18px 6px}
+  #bodyHead .who{font-size:13px;color:var(--dim)}
+  #bodyHead .clock{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+  #collapseBtn{width:30px;height:30px;border-radius:50%;background:var(--card2);
+    display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+  #tabs{display:flex;gap:4px;padding:6px 12px 10px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  #tabs::-webkit-scrollbar{display:none}
+  #tabs button{flex:1 0 auto;min-width:44px;min-height:32px;padding:5px 9px;border-radius:999px;
+    font-size:11.5px;font-weight:600;color:var(--dim);background:var(--card);position:relative}
+  #tabs button.on{background:var(--ink);color:#000}
+  #tabs button .bdg{position:absolute;top:-4px;right:-2px;background:var(--red);color:#fff;
+    font-size:9px;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;
+    justify-content:center;padding:0 4px;font-weight:700}
+  #content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 14px 18px;overscroll-behavior:contain}
+  .sec{display:none;flex-direction:column;gap:10px}
+  .sec.on{display:flex}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px}
+  .row{display:flex;align-items:center;gap:10px}
+  .grow{flex:1;min-width:0}
+  .h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);
+    margin:2px 2px -4px}
+  .small{font-size:12px;color:var(--dim)}
+  .big{font-size:22px;font-weight:700}
+  .tbtn{background:var(--card2);border-radius:12px;min-height:40px;padding:8px 12px;font-size:13px;font-weight:600}
+  .tbtn.primary{background:var(--accent);color:#fff}
+  .tbtn.danger{background:rgba(255,69,58,.18);color:var(--red)}
+  .tbtn.icon{min-width:40px;min-height:40px;display:flex;align-items:center;justify-content:center;padding:0}
+  .seg{display:flex;background:var(--card);border-radius:12px;padding:3px;gap:3px}
+  .seg button{flex:1;min-height:32px;border-radius:9px;font-size:12.5px;font-weight:600;color:var(--dim)}
+  .seg button.on{background:var(--card2);color:var(--ink)}
+  .list{display:flex;flex-direction:column;gap:6px}
+  .li{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:12px;
+    padding:9px 10px;min-height:42px}
+  .li .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .li .txt.wrap{white-space:normal;max-height:60px;overflow:hidden}
+  .li .meta{font-size:10.5px;color:var(--dim)}
+  .mini{min-width:30px;min-height:30px;border-radius:9px;background:var(--card2);
+    display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
+  .sw{width:46px;height:28px;border-radius:14px;background:var(--card2);position:relative;
+    transition:background .2s;flex:none}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;
+    background:#fff;transition:transform .2s}
+  .sw.on{background:var(--green)}
+  .sw.on::after{transform:translateX(18px)}
+  input[type=range]{-webkit-appearance:none;appearance:none;height:28px;background:transparent;border:0;padding:0}
+  input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--card2)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+    background:#fff;margin-top:-8px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .ring{width:120px;height:120px;margin:4px auto;position:relative}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .ring .val b{font-size:26px;font-variant-numeric:tabular-nums}
+  .ring .val span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:44px}
+  .bars i{flex:1;background:linear-gradient(180deg,var(--green),var(--accent));border-radius:2px;height:4px;min-width:3px}
+  .chat{display:flex;flex-direction:column;gap:6px}
+  .msg{max-width:85%;padding:8px 11px;border-radius:14px;font-size:13px;white-space:pre-wrap}
+  .msg.me{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+  .msg.bot{align-self:flex-start;background:var(--card2);border-bottom-left-radius:4px}
+  .drop{border:1.5px dashed var(--line);border-radius:14px;padding:14px;text-align:center;
+    font-size:12.5px;color:var(--dim)}
+  .drop.over{border-color:var(--accent);background:rgba(10,132,255,.08)}
+  .grid4{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stat{background:var(--card);border-radius:14px;padding:10px}
+  .stat .big{font-size:18px}
+  .badge-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:none}
+  .badge-dot.off{background:var(--dim)}
+
+  /* ===== HUD ===== */
+  #hud{position:absolute;left:50%;top:calc(var(--sat) + 30px);transform:translateX(-50%) translateY(-8px);
+    background:#000;color:#fff;border-radius:999px;padding:9px 16px;display:flex;align-items:center;gap:9px;
+    z-index:40;opacity:0;pointer-events:none;transition:all .3s;font-size:13px;font-weight:600;
+    box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:86vw}
+  #hud.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #hud .hbar{width:90px;height:5px;border-radius:3px;background:rgba(255,255,255,.2);overflow:hidden}
+  #hud .hbar i{display:block;height:100%;background:#fff;border-radius:3px}
+
+  /* ===== notification banner ===== */
+  #banner{position:absolute;left:50%;top:calc(var(--sat) + 76px);transform:translateX(-50%) translateY(-14px) scale(.94);
+    width:min(88vw,360px);background:rgba(28,28,30,.92);backdrop-filter:blur(20px);color:#fff;
+    border-radius:20px;padding:12px 14px;z-index:45;opacity:0;pointer-events:none;transition:all .35s;
+    box-shadow:0 14px 50px rgba(0,0,0,.55)}
+  #banner.show{opacity:1;transform:translateX(-50%) translateY(0) scale(1);pointer-events:auto}
+  #banner .bapp{font-size:11px;font-weight:700;text-transform:uppercase;color:#9a9aa0;display:flex;gap:6px;align-items:center}
+  #banner .btitle{font-weight:700;font-size:14px;margin-top:2px}
+  #banner .btext{font-size:13px;color:#c7c7cc}
+
+  /* toast */
+  #toast{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 26px);left:50%;
+    transform:translateX(-50%) translateY(10px);background:rgba(250,250,250,.95);color:#000;
+    border-radius:999px;padding:9px 18px;font-size:13px;font-weight:600;opacity:0;transition:all .25s;
+    z-index:60;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* phone bg hint */
+  #hint{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:0;right:0;
+    text-align:center;font-size:11px;color:rgba(255,255,255,.45);z-index:4;pointer-events:none}
+  [data-theme="light"] #hint{color:rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wallpaper"></div>
+
+  <div id="statusbar">
+    <span id="sbTime">9:41</span>
+    <span id="sb-icons">▮▮▮ <span id="sbBatt">100%</span> 🔋</span>
+  </div>
+
+  <!-- ===== ISLAND ===== -->
+  <div id="island" class="compact">
+    <div id="pill">
+      <div id="pillMain"></div>
+      <span class="cam"></span>
+      <div id="pillBar"><i></i></div>
+    </div>
+
+    <div id="body">
+      <div id="bodyHead">
+        <span class="who" id="greeting">Good morning</span>
+        <span class="clock" id="clock">9:41</span>
+        <button id="collapseBtn" data-act="collapse" aria-label="Collapse">✕</button>
+      </div>
+      <div id="tabs"></div>
+      <div id="content">
+        <!-- MUSIC -->
+        <section class="sec" id="sec-music">
+          <div class="card">
+            <div class="row">
+              <div id="art" style="width:64px;height:64px;border-radius:14px;flex:none"></div>
+              <div class="grow" style="min-width:0">
+                <div id="mTitle" style="font-weight:700;font-size:15px">—</div>
+                <div id="mArtist" class="small">—</div>
+                <div id="lyric" class="small" style="margin-top:5px;font-style:italic;min-height:16px"></div>
+              </div>
+            </div>
+            <div style="margin-top:10px">
+              <input type="range" id="seek" min="0" max="100" value="0" step="0.1" aria-label="Seek">
+              <div class="row small" style="justify-content:space-between;margin-top:-4px">
+                <span id="tCur">0:00</span><span id="tRem">-0:00</span>
+              </div>
+            </div>
+            <div class="row" style="justify-content:center;gap:14px;margin-top:4px">
+              <button class="tbtn icon" data-act="prev">⏮</button>
+              <button class="tbtn icon" id="playBtn" data-act="play" style="width:54px;height:44px;border-radius:14px">▶</button>
+              <button class="tbtn icon" data-act="next">⏭</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row"><span class="small">🔊 Volume</span>
+              <input type="range" id="vol" min="0" max="100" value="70" class="grow" aria-label="Volume"></div>
+            <div class="bars" id="viz" style="margin-top:8px"></div>
+            <div class="row" style="margin-top:8px">
+              <span class="small grow">Visualizer <span class="small">(WebAudio)</span></span>
+              <button class="mini" data-act="lyricCopy" title="Copy current lyric">⧉</button>
+            </div>
+          </div>
+          <div class="h">Queue</div>
+          <div class="list" id="queue"></div>
+        </section>
+
+        <!-- TIMERS -->
+        <section class="sec" id="sec-timers">
+          <div class="card">
+            <div class="ring" id="ring">
+              <svg width="120" height="120">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="8"/>
+                <circle id="ringArc" cx="60" cy="60" r="52" fill="none" stroke="#0a84ff" stroke-width="8"
+                  stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/>
+              </svg>
+              <div class="val"><b id="ringVal">0:00</b><span id="ringLbl">timer</span></div>
+            </div>
+            <div class="grid4" style="margin-top:6px">
+              <button class="tbtn" data-act="preset" data-m="60">1 min</button>
+              <button class="tbtn" data-act="preset" data-m="180">3 min</button>
+              <button class="tbtn" data-act="preset" data-m="300">5 min</button>
+              <button class="tbtn" data-act="preset" data-m="600">10 min</button>
+              <button class="tbtn" data-act="preset" data-m="1500">Pomodoro 25</button>
+              <button class="tbtn" data-act="preset" data-m="300" data-lbl="break">Break 5</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <input type="number" id="customMin" min="1" max="180" placeholder="Custom minutes" inputmode="numeric">
+              <button class="tbtn primary" data-act="timerCustom">Start</button>
+            </div>
+            <div class="row" style="margin-top:8px;gap:8px" id="timerCtl" hidden>
+              <button class="tbtn grow" data-act="timerPause" id="pauseBtn">Pause</button>
+              <button class="tbtn danger grow" data-act="timerStop">Stop</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div class="grow"><div style="font-weight:700">Desk coach</div>
+                <div class="small">Hourly stand-up nudge (DeskSquat)</div></div>
+              <div class="sw" id="swSquat" data-act="toggle" data-k="squat"></div>
+            </div>
+            <div class="small" style="margin-top:6px">Nudges today: <b id="squatCount">0</b></div>
+          </div>
+        </section>
+
+        <!-- CLIPBOARD -->
+        <section class="sec" id="sec-clip">
+          <div class="card">
+            <div class="row">
+              <input id="clipInput" placeholder="Type or paste text to tray…">
+              <button class="tbtn primary icon" data-act="clipAdd">＋</button>
+            </div>
+            <div class="small" style="margin-top:6px">Tap an item to copy it back. Long items are kept ≤ 30.</div>
+          </div>
+          <div class="list" id="clipList"></div>
+          <button class="tbtn danger" data-act="clipClear">Clear unpinned</button>
+        </section>
+
+        <!-- FILES -->
+        <section class="sec" id="sec-files">
+          <div class="drop" id="drop">
+            Drop files here — or
+            <label class="tbtn primary" style="display:inline-flex;align-items:center;margin-left:6px">
+              browse<input type="file" id="fileInput" multiple hidden>
+            </label>
+            <div class="small" style="margin-top:6px">Shelf = notch file tray. Share ≈ AirDrop.</div>
+          </div>
+          <div class="list" id="fileList"></div>
+        </section>
+
+        <!-- NOTIFICATIONS -->
+        <section class="sec" id="sec-notif">
+          <div class="row" style="gap:8px">
+            <button class="tbtn grow" data-act="simNotif">🔔 Simulate message</button>
+            <button class="tbtn grow" data-act="simCall">📞 Simulate call</button>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="tbtn grow" data-act="taskStart">🧮 Start live task</button>
+            <button class="tbtn grow" data-act="taskStop">Stop</button>
+          </div>
+          <div class="list" id="notifList"></div>
+        </section>
+
+        <!-- ASK -->
+        <section class="sec" id="sec-ask">
+          <div class="card chat" id="chat" style="min-height:180px"></div>
+          <div class="row">
+            <button class="tbtn icon" id="micBtn" data-act="askMic" title="Dictate">🎙</button>
+            <input id="askInput" class="grow" placeholder="Ask Omni… (2+2, timer 5, weather)">
+            <button class="tbtn primary icon" data-act="askSend">➤</button>
+          </div>
+          <div class="small">On-device, rule-based — no network. Try “time”, “battery”, “play”, “joke”, “timer 3”.</div>
+        </section>
+
+        <!-- INFO -->
+        <section class="sec" id="sec-info">
+          <div class="card">
+            <div class="row"><span>⛅️ <b>Weather</b></span>
+              <span class="grow" style="text-align:right" id="wMeta"></span>
+              <button class="mini" data-act="weatherRefresh">↻</button>
+              <button class="mini" data-act="weatherCopy">⧉</button>
+            </div>
+            <div class="row" style="margin-top:6px">
+              <span class="big" id="wTemp">—</span>
+              <div class="grow"><div id="wCity" style="font-weight:700"></div><div class="small" id="wCond"></div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row"><span>📈 <b>Stocks</b></span>
+              <span class="grow"></span><button class="mini" data-act="stockRefresh">↻</button></div>
+            <div class="list" id="stockList" style="margin-top:8px"></div>
+            <div class="row" style="margin-top:8px">
+              <input id="symInput" placeholder="Add symbol e.g. TSLA">
+              <button class="tbtn icon" data-act="symAdd">＋</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row"><span>📅 <b>Calendar</b> <span class="small">next up</span></span></div>
+            <div class="list" id="eventList" style="margin-top:8px"></div>
+            <div class="row" style="margin-top:8px">
+              <input id="evTitle" placeholder="Event title">
+              <input id="evTime" type="time" style="max-width:110px">
+              <button class="tbtn icon" data-act="eventAdd">＋</button>
+            </div>
+          </div>
+          <div class="h">Stats</div>
+          <div class="grid4" id="stats"></div>
+        </section>
+
+        <!-- MORE -->
+        <section class="sec" id="sec-more">
+          <div class="card">
+            <div class="h" style="margin-bottom:8px">Appearance</div>
+            <div class="seg" id="themeSeg">
+              <button data-act="setTheme" data-v="dark">🌙 Dark</button>
+              <button data-act="setTheme" data-v="light">☀️ Light</button>
+            </div>
+            <div class="h" style="margin:12px 0 8px">Compact pill shows</div>
+            <div class="seg" id="compactSeg">
+              <button data-act="setCompact" data-v="auto">Auto</button>
+              <button data-act="setCompact" data-v="music">Music</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row"><span class="grow">Auto-collapse after 12 s idle</span>
+              <div class="sw" data-act="toggle" data-k="autoCollapse"></div></div>
+            <div class="row" style="margin-top:10px"><span class="grow">Voice reminders (Maaa)</span>
+              <div class="sw" data-act="toggle" data-k="voice"></div></div>
+            <div class="row" style="margin-top:10px"><span class="grow">Haptics</span>
+              <div class="sw" data-act="toggle" data-k="haptics"></div></div>
+          </div>
+          <div class="h">Notes (Tucky)</div>
+          <div class="card">
+            <div class="row">
+              <input id="noteInput" placeholder="Quick note…">
+              <button class="tbtn primary icon" data-act="noteAdd">＋</button>
+            </div>
+          </div>
+          <div class="list" id="noteList"></div>
+          <div class="h">Saved links (Are.na)</div>
+          <div class="card">
+            <div class="row">
+              <input id="linkInput" placeholder="https://…">
+              <button class="tbtn primary icon" data-act="linkAdd">＋</button>
+            </div>
+          </div>
+          <div class="list" id="linkList"></div>
+          <div class="card">
+            <div class="row"><span class="grow" style="font-weight:700">Incoming call demo</span>
+              <button class="tbtn" data-act="simCall">Ringing…</button></div>
+          </div>
+          <button class="tbtn danger" data-act="reset">Reset all data</button>
+          <div class="small" style="text-align:center;margin:4px 0 8px">
+            Island 1.0 — 40 features, one file · adapted from macmenubar.app/dynamic-island
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud"></div>
+  <div id="banner"></div>
+  <div id="toast"></div>
+  <div id="hint">tap pill to open · long-press to change pill · tap outside to close</div>
+</div>
+
+<script>
+'use strict';
+/* ================= helpers ================= */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const nowT=()=>new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+function buzz(ms=10){ if(S.haptics && navigator.vibrate) try{navigator.vibrate(ms)}catch(e){} }
+function speak(t){ if(!S.voice||!('speechSynthesis'in window))return;
+  try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(t); u.rate=1.05; speechSynthesis.speak(u);}catch(e){} }
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('show'),1700); }
+
+/* ================= state ================= */
+const DEF={theme:'dark',compact:'auto',autoCollapse:true,voice:true,haptics:true,squat:false,
+  squatCount:0,squatDay:'',clip:[],notes:[],links:[],events:[],stocks:['AAPL','MSFT','NVDA']};
+if(!['auto','music'].includes(DEF.compact)) DEF.compact='auto';
+let S;
+try{ S=Object.assign({},DEF,JSON.parse(localStorage.getItem('island')||'{}')); }catch(e){ S=Object.assign({},DEF); }
+const save=()=>{ try{localStorage.setItem('island',JSON.stringify(S))}catch(e){} };
+if(S.squatDay!==new Date().toDateString()){ S.squatDay=new Date().toDateString(); S.squatCount=0; save(); }
+
+/* ================= music (WebAudio synth) ================= */
+const TRACKS=[
+ {title:'Neon Drift',artist:'Analog Fields',dur:42,c1:'#7c3aed',c2:'#0ea5e9',key:220,lyrics:['City lights are bleeding slow','Every window has a glow','We drift where the neon goes']},
+ {title:'Glass Morning',artist:'Lumen',dur:36,c1:'#0ea5e9',c2:'#22d3ee',key:262,lyrics:['Light is pouring through the glass','Hours slide, they never ask','Stay a while, let morning last']},
+ {title:'Deep Focus',artist:'Mono Club',dur:48,c1:'#059669',c2:'#84cc16',key:196,lyrics:['One task, one breath, one line','Focus deep and time aligns','Everything in its design']},
+ {title:'Nightframe',artist:'Vela Nova',dur:40,c1:'#e11d48',c2:'#f97316',key:247,lyrics:['Shutter open, hold the dark','One more frame before we park','Night is patient, night is art']},
+ {title:'Cassette Sky',artist:'Retro Bloom',dur:44,c1:'#d97706',c2:'#fbbf24',key:294,lyrics:['Rewind the tape of yesterday','The sky loops back to play','Cassette dreams in stereo rays']}];
+const M={i:0,playing:false,pos:0,vol:.7,ctx:null,gain:null,ana:null,step:0,next:0,timer:null,seq:null};
+function ensureAudio(){
+  if(M.ctx) { if(M.ctx.state==='suspended') M.ctx.resume(); return; }
+  const C=window.AudioContext||window.webkitAudioContext; if(!C) return;
+  M.ctx=new C(); M.gain=M.ctx.createGain(); M.gain.gain.value=M.vol;
+  M.ana=M.ctx.createAnalyser(); M.ana.fftSize=64;
+  M.gain.connect(M.ana); M.ana.connect(M.ctx.destination);
+  const scale=[0,3,5,7,10,12,7,5];
+  M.seq=()=>{ if(!M.playing)return; const t=M.ctx.currentTime;
+    while(M.next<t+.12){
+      const f=TRACKS[M.i].key*Math.pow(2,scale[M.step%scale.length]/12);
+      const o=M.ctx.createOscillator(),g=M.ctx.createGain();
+      o.type=M.step%4===0?'triangle':'sine'; o.frequency.value=f;
+      g.gain.setValueAtTime(.001,M.next); g.gain.exponentialRampToValueAtTime(.22,M.next+.02);
+      g.gain.exponentialRampToValueAtTime(.001,M.next+.28);
+      o.connect(g); g.connect(M.gain); o.start(M.next); o.stop(M.next+.3);
+      if(M.step%2===0){ // soft kick
+        const k=M.ctx.createOscillator(),kg=M.ctx.createGain();
+        k.frequency.setValueAtTime(110,M.next); k.frequency.exponentialRampToValueAtTime(45,M.next+.1);
+        kg.gain.setValueAtTime(.3,M.next); kg.gain.exponentialRampToValueAtTime(.001,M.next+.12);
+        k.connect(kg); kg.connect(M.gain); k.start(M.next); k.stop(M.next+.13);
+      }
+      M.next+=.25; M.step++;
+    } };
+}
+function play(){ ensureAudio(); M.playing=true;
+  if(M.ctx){ M.next=Math.max(M.next,M.ctx.currentTime+.05); clearInterval(M.timer); M.timer=setInterval(M.seq,60); }
+  buzz(); renderMusic();
+}
+function pause(){ M.playing=false; clearInterval(M.timer); buzz(); renderMusic(); }
+function setVol(v){ M.vol=clamp(v,0,1); if(M.gain) M.gain.gain.value=M.vol;
+  hud('🔊 Volume',M.vol*100); }
+function tSwitch(d){ M.i=(M.i+d+TRACKS.length)%TRACKS.length; M.pos=0; if(M.ctx)M.next=M.ctx.currentTime+.05; renderMusic(); }
+function lyric(){ const t=TRACKS[M.i]; return t.lyrics[Math.floor(M.pos/6)%t.lyrics.length]; }
+
+/* ================= timer / task / call ================= */
+const T={dur:0,left:0,running:false,lbl:'timer',iv:null};
+function timerStart(sec,lbl){ clearInterval(T.iv); T.dur=sec; T.left=sec; T.lbl=lbl||'timer'; T.running=true;
+  T.iv=setInterval(()=>{ T.left--;
+    if(T.left<=0){ timerStop(); notify('Island','⏱ Timer', (T.lbl==='break'?'Break':'Timer')+' finished — take a breath');
+      speak(T.lbl==='break'?'Break over':'Timer done'); hud('⏱ Timer done'); } renderCompact();
+  },1000); renderCompact(); buzz(); }
+function timerStop(){ clearInterval(T.iv); T.running=false; T.dur=0; T.left=0; renderCompact(); }
+const TASK={on:false,p:0,name:'Index files'};
+function taskStart(){ TASK.on=true; TASK.p=0;
+  TASK.iv=setInterval(()=>{ TASK.p+=100/90; if(TASK.p>=100){TASK.p=100;TASK.on=false;clearInterval(TASK.iv);
+      notify('Island','🧮 Task','Indexing finished'); } renderCompact(); },1000); renderCompact(); }
+const CALL={state:'idle',name:'',t:0,iv:null,mute:false};
+function callRing(name){ CALL.state='ring'; CALL.name=name||'Sam'; CALL.mute=false;
+  expand(); setTab('notif'); renderCall(); speak('Incoming call from '+CALL.name); }
+function callAccept(){ CALL.state='live'; CALL.t=0; CALL.iv=setInterval(()=>{CALL.t++; renderCall(); renderCompact();},1000); renderCall(); }
+function callEnd(){ clearInterval(CALL.iv); CALL.state='idle'; renderCall(); renderCompact(); collapse(); }
+
+/* ================= notifications / banner ================= */
+let NOTIFS=[], UNREAD=0;
+function notify(app,title,text){ NOTIFS.unshift({app,title,text,time:nowT(),id:Date.now()}); UNREAD++;
+  if(NOTIFS.length>20)NOTIFS.pop(); banner(app,title,text); renderNotifs(); renderTabs(); buzz(18);
+  if(!I.open) { I.pulse='notif'; setTimeout(()=>{I.pulse=null;renderCompact();},2600); } renderCompact(); }
+function banner(app,title,text){ const b=$('#banner');
+  b.innerHTML=`<div class="bapp">${esc(app)}</div><div class="btitle">${esc(title)}</div><div class="btext">${esc(text)}</div>`;
+  b.classList.add('show'); clearTimeout(banner._t);
+  banner._t=setTimeout(()=>b.classList.remove('show'),4200);
+  b.onclick=()=>{ b.classList.remove('show'); expand(); setTab('notif'); }; }
+
+/* ================= HUD ================= */
+function hud(label,pct){ const h=$('#hud');
+  h.innerHTML=esc(label)+(pct!=null?` <span class="hbar"><i style="width:${clamp(pct,0,100)}%"></i></span>`:'');
+  h.classList.add('show'); clearTimeout(hud._t); hud._t=setTimeout(()=>h.classList.remove('show'),1600); }
+
+/* ================= island open/close ================= */
+const I={open:false,idle:null,pulse:null};
+function sizeIsland(){ const isl=$('#island'); if(!I.open){ isl.style.width=''; isl.style.height=''; return; }
+  const w=Math.min(window.innerWidth*.92,400);
+  const h=Math.min(window.innerHeight*.78,640);
+  isl.style.width=w+'px'; isl.style.height=h+'px'; }
+function expand(){ if(I.open)return; I.open=true; $('#island').classList.add('expanded');
+  sizeIsland(); resetIdle(); buzz(); }
+function collapse(){ if(!I.open)return; I.open=false; $('#island').classList.remove('expanded');
+  sizeIsland(); clearTimeout(I.idle); renderCompact(); }
+function resetIdle(){ clearTimeout(I.idle);
+  if(S.autoCollapse) I.idle=setTimeout(()=>collapse(),12000); }
+function cyclePill(){ S.compact = S.compact==='auto' ? 'music' : 'auto'; save();
+  hud('Pill: '+S.compact); renderCompact(); buzz(20); }
+
+/* long-press on pill */
+let lpT=null;
+$('#island').addEventListener('touchstart',e=>{ if(I.open)return; lpT=setTimeout(cyclePill,550); },{passive:true});
+['touchend','touchmove','touchcancel'].forEach(ev=>$('#island').addEventListener(ev,()=>clearTimeout(lpT),{passive:true}));
+$('#island').addEventListener('contextmenu',e=>{ if(!I.open){e.preventDefault();cyclePill();} });
+$('#pill').addEventListener('dblclick',()=>{ if(!I.open) cyclePill(); });
+
+/* tap pill expands; outside tap collapses */
+document.addEventListener('pointerdown',e=>{
+  const isl=$('#island');
+  const inIsland = e.target===isl || (e.target.closest && e.target.closest('#island'));
+  if(!I.open && inIsland) { expand(); return; }
+  if(I.open && !inIsland) collapse();
+});
+
+/* ================= tabs & renderers ================= */
+const TABS=[['music','Music','🎵'],['timers','Timers','⏱'],['clip','Tray','📋'],['files','Files','🗂'],
+  ['notif','Inbox','🔔'],['ask','Omni','✨'],['info','Info','🌤'],['more','More','⋯']];
+let TAB='music';
+function setTab(t){ TAB=t; renderTabs(); }
+function renderTabs(){ $('#tabs').innerHTML=TABS.map(([id,name,ic])=>
+  `<button data-act="tab" data-v="${id}" class="${TAB===id?'on':''}">${ic} ${name}
+   ${id==='notif'&&UNREAD?`<span class="bdg">${UNREAD}</span>`:''}</button>`).join('');
+  $$('.sec').forEach(s=>s.classList.toggle('on',s.id==='sec-'+TAB)); }
+
+function renderMusic(){
+  const t=TRACKS[M.i];
+  $('#art').style.background=`linear-gradient(135deg,${t.c1},${t.c2})`;
+  $('#mTitle').textContent=t.title; $('#mArtist').textContent=t.artist;
+  $('#playBtn').textContent=M.playing?'⏸':'▶';
+  $('#lyric').textContent=M.playing?'♪ '+lyric():'';
+  const pct=t.dur?M.pos/t.dur*100:0;
+  $('#seek').value=pct; $('#tCur').textContent=fmt(M.pos); $('#tRem').textContent='-'+fmt(t.dur-M.pos);
+  $('#queue').innerHTML=TRACKS.map((tr,i)=>
+   `<div class="li" data-act="queue" data-v="${i}">
+      <span class="dot" style="width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,${tr.c1},${tr.c2});flex:none"></span>
+      <div class="txt"><b style="font-size:13px">${esc(tr.title)}</b><div class="meta">${esc(tr.artist)} · ${fmt(tr.dur)}</div></div>
+      ${i===M.i?'<span class="small">▶</span>':''}</div>`).join('');
+  const bars=$('#viz'); if(bars.childElementCount!==14) bars.innerHTML='<i></i>'.repeat(14);
+}
+function renderTimer(){
+  const running=T.running, tot=T.dur||1, off=326.7*(1-(running?T.left/tot:(T.left?T.left/tot:0)));
+  $('#ringArc').style.strokeDashoffset=running?326.7*(T.left/tot):326.7;
+  $('#ringVal').textContent=fmt(running||T.left?T.left:0);
+  $('#ringLbl').textContent=T.lbl;
+  $('#timerCtl').hidden=!(T.running||T.left>0);
+  $('#pauseBtn').textContent=T.running?'Pause':'Resume';
+}
+function renderClip(){
+  $('#clipList').innerHTML=S.clip.length?S.clip.map((c,i)=>
+   `<div class="li"><span class="mini" data-act="clipPin" data-v="${i}">${c.pinned?'📌':'📍'}</span>
+      <div class="txt" data-act="clipCopy" data-v="${i}">${esc(c.text.slice(0,120))}<div class="meta">${c.pinned?'pinned · ':''}${c.ts}</div></div>
+      <span class="mini" data-act="clipDel" data-v="${i}">✕</span></div>`).join('')
+   :'<div class="small" style="text-align:center;padding:10px">Tray empty — copy something below or paste above.</div>';
+}
+function renderFiles(){
+  $('#fileList').innerHTML=FILES.length?FILES.map((f,i)=>
+   `<div class="li"><span class="mini">${f.icon}</span>
+      <div class="txt" data-act="fileOpen" data-v="${i}"><b style="font-size:13px">${esc(f.name)}</b>
+        <div class="meta">${f.size}</div></div>
+      <span class="mini" data-act="fileShare" data-v="${i}" title="Share (AirDrop)">↗</span>
+      <span class="mini" data-act="fileDel" data-v="${i}">✕</span></div>`).join('')
+   :'<div class="small" style="text-align:center;padding:10px">Shelf empty — drop or browse files.</div>';
+}
+function renderNotifs(){
+  $('#notifList').innerHTML=NOTIFS.length?NOTIFS.map((n,i)=>
+   `<div class="card" style="padding:10px">
+      <div class="row"><span class="small grow"><b>${esc(n.app)}</b> · ${esc(n.time)}</span>
+        ${n.reply?`<span class="badge-dot"></span>`:''}
+        <span class="mini" data-act="notifDismiss" data-v="${i}">✕</span></div>
+      <div style="font-weight:700;font-size:14px;margin-top:2px">${esc(n.title)}</div>
+      <div class="small">${esc(n.text)}</div>
+      ${n.reply?`<div class="row" style="margin-top:8px">
+        <input class="grow" placeholder="Quick reply…" data-reply="${i}">
+        <button class="tbtn primary icon" data-act="notifSend" data-v="${i}">➤</button></div>`:''}
+    </div>`).join('')
+   :'<div class="small" style="text-align:center;padding:10px">No notifications. Simulate one above.</div>';
+}
+function renderChat(){
+  $('#chat').innerHTML=CHAT.length?CHAT.map(m=>`<div class="msg ${m.who}">${esc(m.t)}</div>`).join('')
+   :'<div class="small">Hi — I’m Omni, on-device. Ask me the time, math, weather, or say “timer 5”.</div>';
+  const c=$('#chat'); c.scrollTop=c.scrollHeight;
+}
+function renderInfo(){
+  $('#wCity').textContent=W.city; $('#wTemp').textContent=W.temp+'°'; $('#wCond').textContent=W.cond;
+  $('#wMeta').textContent=W.hi+'° / '+W.lo+'° · 💧'+W.hum+'%';
+  $('#stockList').innerHTML=S.stocks.map((s,i)=>{ const q=QUOTES[s]||{p:0,d:0};
+    return `<div class="li"><div class="txt"><b>${esc(s)}</b><div class="meta">$${q.p.toFixed(2)}</div></div>
+      <span class="mini" data-act="stockCopy" data-v="${i}">⧉</span>
+      <b style="color:${q.d>=0?'var(--green)':'var(--red)'};min-width:64px;text-align:right">${q.d>=0?'+':''}${q.d.toFixed(2)}%</b></div>`;}).join('');
+  const evs=S.events.map(e=>({...e,when:new Date(e.when)})).filter(e=>e.when>new Date())
+    .sort((a,b)=>a.when-b.when).slice(0,3);
+  $('#eventList').innerHTML=evs.length?evs.map(e=>
+   `<div class="li"><span class="mini">📅</span><div class="txt"><b style="font-size:13px">${esc(e.title)}</b>
+      <div class="meta">${e.when.toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'})}</div></div></div>`).join('')
+   :'<div class="small">No upcoming events — add one below.</div>';
+  const batt=navigator.getBattery?null:null;
+  $('#stats').innerHTML=`
+   <div class="stat" data-act="hudBatt"><div class="small">Battery</div><div class="big" id="stBatt">${BATT.level}%</div></div>
+   <div class="stat"><div class="small">Network</div><div class="big" style="font-size:14px">${navigator.onLine?'Online 🛜':'Offline ✈️'}</div></div>
+   <div class="stat"><div class="small">Session</div><div class="big" id="stUp">${fmt((Date.now()-START)/1000)}</div></div>
+   <div class="stat"><div class="small">Shelf</div><div class="big">${FILES.length} file${FILES.length===1?'':'s'}</div></div>`;
+}
+function renderCall(){
+  const sec=$('#sec-notif'); let el=$('#callCard');
+  if(CALL.state==='idle'){ if(el)el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='callCard'; el.className='card';
+    sec.prepend(el); }
+  if(CALL.state==='ring'){
+    el.innerHTML=`<div style="text-align:center;padding:6px 0">
+      <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#0ea5e9);margin:0 auto 8px"></div>
+      <b style="font-size:17px">${esc(CALL.name)}</b><div class="small">calling on Island…</div>
+      <div class="row" style="justify-content:center;gap:12px;margin-top:10px">
+        <button class="tbtn danger" data-act="callDecline">✕ Decline</button>
+        <button class="tbtn primary" data-act="callAccept">✓ Accept</button></div></div>`;
+  } else {
+    el.innerHTML=`<div style="text-align:center;padding:6px 0">
+      <b style="font-size:17px">${esc(CALL.name)}</b>
+      <div class="small">${fmt(CALL.t)} ${CALL.mute?'· muted 🔇':''}</div>
+      <div class="row" style="justify-content:center;gap:12px;margin-top:10px">
+        <button class="tbtn ${CALL.mute?'primary':''}" data-act="callMute">${CALL.mute?'Unmute':'🔇 Mute'}</button>
+        <button class="tbtn danger" data-act="callEnd">End</button></div></div>`;
+  }
+}
+function renderMore(){
+  $$('#themeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.theme));
+  $$('#compactSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.compact));
+  $$('.sw[data-k]').forEach(sw=>sw.classList.toggle('on',!!S[sw.dataset.k]));
+  $('#noteList').innerHTML=S.notes.length?S.notes.map((n,i)=>
+   `<div class="li"><div class="txt wrap" data-act="noteLoad" data-v="${i}">${esc(n.text.slice(0,90))}<div class="meta">${n.ts}</div></div>
+    <span class="mini" data-act="noteDel" data-v="${i}">✕</span></div>`).join('')
+   :'<div class="small" style="text-align:center;padding:6px">No notes yet.</div>';
+  $('#linkList').innerHTML=S.links.length?S.links.map((l,i)=>
+   `<div class="li"><span class="mini">🔗</span>
+      <a class="txt" href="${esc(l.url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">${esc(l.url.slice(0,60))}</a>
+      <span class="mini" data-act="linkDel" data-v="${i}">✕</span></div>`).join('')
+   :'<div class="small" style="text-align:center;padding:6px">No saved links yet.</div>';
+}
+/* compact pill */
+function renderCompact(){
+  const pill=$('#pillMain'); const isl=$('#island'); let html='',bar=null,text='',sub='';
+  let mode=S.compact;
+  const active = CALL.state!=='idle' || T.running || TASK.on || M.playing; // kept for future gating
+  isl.classList.toggle('has-activity',!!(T.running||TASK.on));
+  if(mode==='auto' && I.pulse==='notif'){ text='🔔 New notification'; }
+  else if(mode==='auto' && CALL.state==='ring'){ text='📞 '+CALL.name; sub='incoming'; }
+  else if(mode==='auto' && CALL.state==='live'){ text='📞 '+CALL.name; sub=fmt(CALL.t); }
+  if(mode==='music'||(mode==='auto'&&!text&&M.playing)){
+    const t=TRACKS[M.i];
+    html=`<span class="dot" style="background:linear-gradient(135deg,${t.c1},${t.c2})"></span>
+      <span id="pillText">${esc(t.title)}</span>
+      <span class="eq ${M.playing?'':'paused'}"><i></i><i></i><i></i></span>`;
+  } else if((mode==='timer'||mode==='auto')&&!text&&T.running){
+    text='⏱ '+fmt(T.left); sub=T.lbl; bar=T.left/(T.dur||1);
+  } else if(mode==='auto'&&!text&&TASK.on){ text='🧮 '+Math.round(TASK.p)+'%'; sub=TASK.name; bar=TASK.p/100; }
+  else if(mode==='auto'&&!text){ text=nowT(); sub=new Date().toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'}); }
+  if(text) html=`<span id="pillText">${esc(text)}</span>${sub?`<span id="pillSub">${esc(sub)}</span>`:''}${html}`;
+  if(CALL.state==='live') bar=null;
+  pill.innerHTML=html;
+  const pb=$('#pillBar'); if(bar!=null){ pb.firstElementChild.style.width=clamp(bar*100,0,100)+'%'; }
+  else if(pb) pb.firstElementChild.style.width='0%';
+  renderTimer();
+}
+
+/* ================= weather / quotes / battery ================= */
+const W={city:'Cupertino',temp:21,cond:'Partly cloudy',hi:24,lo:16,hum:54};
+function weatherRefresh(){ const conds=['Sunny','Partly cloudy','Light rain','Overcast','Windy'];
+  W.cond=conds[Math.floor(Math.random()*conds.length)]; W.temp=15+Math.floor(Math.random()*14);
+  W.hi=W.temp+3+Math.floor(Math.random()*4); W.lo=W.temp-4-Math.floor(Math.random()*4);
+  W.hum=40+Math.floor(Math.random()*40); renderInfo(); hud('⛅️ '+W.temp+'° '+W.cond); }
+let QUOTES={};
+function quoteRefresh(){ S.stocks.forEach(s=>{ const base=80+((s.length*37)%220);
+  QUOTES[s]={p:base*(0.9+Math.random()*.2),d:(Math.random()*6-3)}; }); renderInfo(); }
+const BATT={level:87,charging:false};
+const START=Date.now();
+if(navigator.getBattery) { /* legacy */ }
+if(navigator.battery){} /* noop */
+function initBattery(){
+  if(navigator.getBattery===undefined && navigator.getBattery) {}
+  if(typeof navigator.getBattery==='function'){ navigator.getBattery().then(b=>{
+    const up=()=>{BATT.level=Math.round(b.level*100);BATT.charging=b.charging;renderInfo();
+      if(b.charging)hud('⚡️ Charging '+BATT.level+'%');};
+    up(); ['levelchange','chargingchange'].forEach(e=>b.addEventListener(e,up)); }).catch(()=>{}); }
+}
+
+/* ================= files ================= */
+const FILES=[];
+function addFiles(list){ [...list].forEach(f=>{
+  FILES.unshift({name:f.name,size:f.size>1048576?(f.size/1048576).toFixed(1)+' MB':Math.max(1,Math.round(f.size/1024))+' KB',
+    type:f.type||'file',file:f,icon:(f.type.startsWith('image')?'🖼':f.type.startsWith('audio')?'🎵':f.type.startsWith('video')?'🎬':f.type.includes('pdf')?'📕':'📄')});
+}); if(FILES.length>12)FILES.length=12; renderFiles(); renderInfo(); toast('Shelved '+list.length+' file(s)'); buzz(); }
+function fileOpen(i){ const f=FILES[i]; if(!f)return;
+  const url=URL.createObjectURL(f.file); const w=window.open(url,'_blank');
+  if(!w) toast('Popup blocked — share instead'); }
+async function fileShare(i){ const f=FILES[i]; if(!f)return;
+  try{ if(navigator.canShare&&navigator.canShare({files:[f.file]})){ await navigator.share({files:[f.file],title:f.name}); }
+    else if(navigator.share){ await navigator.share({title:f.name,text:f.name}); }
+    else { await navigator.clipboard.writeText(f.name); toast('Share unavailable — name copied'); }
+  }catch(e){ if(e.name!=='AbortError') toast('Share cancelled'); } }
+
+/* ================= Omni assistant ================= */
+const CHAT=[];
+function omni(q){ const t=q.trim().toLowerCase(); const say=r=>({who:'bot',t:r});
+  CHAT.push({who:'me',t:q});
+  let r;
+  if(/^(hi|hello|hey)\b/.test(t)) r='Hey! I live in the pill. Try “timer 5”, “play”, or “2+2”.';
+  else if(/\btime\b/.test(t)) r='It’s '+nowT()+'.';
+  else if(/\b(date|day)\b/.test(t)) r='Today is '+new Date().toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'})+'.';
+  else if(/battery|power/.test(t)) r='Battery '+(BATT.charging?'charging at ':'')+BATT.level+'%. Tap the Stats tile for the HUD.';
+  else if(/weather/.test(t)) r=W.city+': '+W.temp+'°, '+W.cond.toLowerCase()+'. Say “refresh weather” for more.';
+  else if(/refresh weather/.test(t)){ weatherRefresh(); r='Fresh sky: '+W.temp+'°, '+W.cond.toLowerCase()+'.'; }
+  else if(/^play$|play music|song/.test(t)){ if(!M.playing)play(); r='Playing “'+TRACKS[M.i].title+'”. 🎵'; }
+  else if(/pause/.test(t)){ pause(); r='Paused.'; }
+  else if(/next|skip/.test(t)){ tSwitch(1); r='Now playing “'+TRACKS[M.i].title+'”. '; }
+  else if(/joke/.test(t)) r='Why did the notch get promoted? It was outstanding in its field… of pixels.';
+  else if(/^-?\d/.test(t)&&/^[\d\s+\-*/().]+$/.test(t)){ try{ r=String(Function('"use strict";return('+t+')')()); }catch(e){ r='That math stumped me.'; } }
+  else { const m=t.match(/timer\s*(\d+)\s*(min|minute|m)?/); if(m){ timerStart(+m[1]*60,'timer'); r='Timer started — '+m[1]+' minute'+(+m[1]>1?'s':'')+'. Watch the pill.'; }
+    else if(/help/.test(t)) r='I know: time, date, weather, battery, play/pause/next, timer N, math like 12*7, joke.';
+    else r='On-device brain, small but honest. “help” lists my tricks.'; }
+  CHAT.push(say(r)); if(CHAT.length>40)CHAT.splice(0,CHAT.length-40);
+  renderChat();
+}
+
+/* ================= clipboard tray ops ================= */
+function clipAdd(text){ text=(text||'').trim(); if(!text)return toast('Nothing to tray');
+  if(S.clip.some(c=>c.text===text)) return toast('Already in tray');
+  S.clip.unshift({text,pinned:false,ts:nowT()});
+  const pinned=S.clip.filter(c=>c.pinned), rest=S.clip.filter(c=>!c.pinned);
+  S.clip=[...pinned,...rest].slice(0,30); save(); renderClip(); hud('📋 Trayed'); buzz(); }
+async function clipCopy(i){ const c=S.clip[i]; if(!c)return;
+  try{ await navigator.clipboard.writeText(c.text); }catch(e){}
+  toast('Copied ✓'); buzz(); }
+
+/* ================= delegation ================= */
+document.addEventListener('click',async e=>{
+  const el=e.target.closest('[data-act]'); if(!el)return;
+  const act=el.dataset.act, v=el.dataset.v;
+  switch(act){
+    case 'collapse': collapse(); break;
+    case 'tab': setTab(v); resetIdle(); break;
+    case 'play': M.playing?pause():play(); break;
+    case 'next': tSwitch(1); break; case 'prev': tSwitch(-1); break;
+    case 'queue': M.i=+v; M.pos=0; if(!M.playing)play(); else {if(M.ctx)M.next=M.ctx.currentTime+.05;} renderMusic(); renderCompact(); break;
+    case 'preset': timerStart(+el.dataset.m, el.dataset.lbl||'timer'); setTab('timers'); break;
+    case 'timerCustom': { const m=+$('#customMin').value; if(m>0)timerStart(m*60,'timer'); break; }
+    case 'timerPause': T.running?(clearInterval(T.iv),T.running=false):(T.iv=setInterval(()=>{T.left--;if(T.left<=0){timerStop();notify('Island','⏱ Timer','Finished');speak('Timer done');}renderCompact();},1000),T.running=true); renderCompact(); break;
+    case 'timerStop': timerStop(); break;
+    case 'toggle': S[el.dataset.k]=!S[el.dataset.k]; save(); renderMore(); renderCompact();
+      if(el.dataset.k==='squat') hud(S.squat?'Desk coach on 🧍':'Desk coach off'); buzz(); break;
+    case 'setTheme': S.theme=v; save(); document.documentElement.dataset.theme=v; renderMore(); break;
+    case 'setCompact': S.compact=v; save(); renderMore(); renderCompact(); break;
+    case 'clipAdd': clipAdd($('#clipInput').value); $('#clipInput').value=''; break;
+    case 'clipCopy': clipCopy(+v); break;
+    case 'clipPin': { const c=S.clip[+v]; c.pinned=!c.pinned; save(); renderClip(); break; }
+    case 'clipDel': S.clip.splice(+v,1); save(); renderClip(); break;
+    case 'clipClear': S.clip=S.clip.filter(c=>c.pinned); save(); renderClip(); toast('Unpinned cleared'); break;
+    case 'fileOpen': fileOpen(+v); break;
+    case 'fileShare': fileShare(+v); break;
+    case 'fileDel': FILES.splice(+v,1); renderFiles(); renderInfo(); break;
+    case 'simNotif': { const apps=[['Messages','Alex','Are we still on for lunch?'],['Mail','GitHub','Your build passed ✓'],['Calendar','Island','Standup in 10 minutes']];
+      const a=apps[Math.floor(Math.random()*3)]; notify(a[0],a[1],a[2]); break; }
+    case 'simCall': callRing(['Sam','Priya','Mom','Kai'][Math.floor(Math.random()*4)]); break;
+    case 'taskStart': taskStart(); setTab('notif'); toast('Live activity started'); break;
+    case 'taskStop': clearInterval(TASK.iv); TASK.on=false; renderCompact(); break;
+    case 'callAccept': callAccept(); break;
+    case 'callDecline': notify('Phone','Missed call',CALL.name+' — tap to reply'); callEnd(); break;
+    case 'callEnd': callEnd(); break;
+    case 'callMute': CALL.mute=!CALL.mute; renderCall(); break;
+    case 'notifDismiss': NOTIFS.splice(+v,1); renderNotifs(); break;
+    case 'notifSend': { const inp=document.querySelector(`input[data-reply="${v}"]`);
+      const n=NOTIFS[+v]; n.reply=false; UNREAD=Math.max(0,UNREAD-1);
+      toast('Reply sent to '+n.title); if(inp&&inp.value)CHAT.push({who:'me',t:'↩ '+inp.value}),renderChat();
+      renderNotifs(); renderTabs(); break; }
+    case 'askSend': { const i=$('#askInput'); if(i.value.trim()){omni(i.value); i.value='';} break; }
+    case 'askMic': dictate(); setTimeout(()=>{ if(document.querySelector('#micBtn').textContent==='⏺')document.querySelector('#micBtn').textContent='🎙'; },800); break;
+    case 'weatherRefresh': weatherRefresh(); break;
+    case 'weatherCopy': clipAdd(`${W.city}: ${W.temp}° ${W.cond} (${W.hi}°/${W.lo}°)`); toast('Weather → tray'); break;
+    case 'lyricCopy': clipAdd('♪ '+lyric()+' — '+TRACKS[M.i].title); toast('Lyric → tray'); break;
+    case 'stockRefresh': quoteRefresh(); hud('📈 Quotes refreshed'); break;
+    case 'stockCopy': { const s=S.stocks[+v],q=QUOTES[s]; clipAdd(`${s} $${q.p.toFixed(2)} (${q.d>=0?'+':''}${q.d.toFixed(2)}%)`); toast(s+' → tray'); break; }
+    case 'symAdd': { const v2=$('#symInput').value.trim().toUpperCase().slice(0,6);
+      if(v2&&!S.stocks.includes(v2)){S.stocks.push(v2);quoteRefresh();save();toast(v2+' added');}
+      $('#symInput').value=''; break; }
+    case 'eventAdd': { const t2=$('#evTitle').value.trim(), tm=$('#evTime').value;
+      if(t2&&tm){ const d=new Date(); const[h,mi]=tm.split(':').map(Number);
+        d.setHours(h,mi,0,0); if(d<=new Date())d.setDate(d.getDate()+1);
+        S.events.push({title:t2,when:d.toISOString()}); save(); renderInfo();
+        $('#evTitle').value=''; toast('Event added'); } break; }
+    case 'hudBatt': hud(BATT.charging?'⚡️ Charging':'🔋 Battery',BATT.level); break;
+    case 'noteAdd': { const i=$('#noteInput'); const t2=i.value.trim(); if(!t2)break;
+      S.notes.unshift({text:t2,ts:nowT()}); S.notes=S.notes.slice(0,20); save(); i.value=''; renderMore(); toast('Note saved'); break; }
+    case 'noteLoad': $('#noteInput').value=S.notes[+v].text; break;
+    case 'noteDel': S.notes.splice(+v,1); save(); renderMore(); break;
+    case 'linkAdd': { const i=$('#linkInput'); let u=i.value.trim();
+      if(u&&!/^https?:\/\//i.test(u))u='https://'+u;
+      if(u&&/^https?:\/\/.+\..+/.test(u)){ S.links.unshift({url:u,ts:nowT()}); S.links=S.links.slice(0,20); save(); renderMore(); i.value=''; toast('Link saved'); }
+      else toast('Not a link'); break; }
+    case 'linkDel': S.links.splice(+v,1); save(); renderMore(); break;
+    case 'reset': if(confirm('Erase all Island data?')){ localStorage.removeItem('island'); location.reload(); } break;
+  }
+});
+/* Enter-to-submit for inputs */
+[['#clipInput',()=>clipAdd($('#clipInput').value)],
+ ['#askInput',()=>omni($('#askInput').value)],
+ ['#noteInput',()=>{const i=$('#noteInput');if(i.value.trim()){S.notes.unshift({text:i.value.trim(),ts:nowT()});S.notes=S.notes.slice(0,20);save();i.value='';renderMore();}}],
+ ['#linkInput',()=>document.querySelector('[data-act=linkAdd]').click()],
+ ['#symInput',()=>document.querySelector('[data-act=symAdd]').click()],
+ ['#evTitle',()=>document.querySelector('[data-act=eventAdd]').click()],
+ ['#customMin',()=>document.querySelector('[data-act=timerCustom]').click()]
+].forEach(([sel,fn])=>document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target.matches(sel)){e.preventDefault();fn();}}));
+/* reply inputs (dynamic) */
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.reply!=null){
+    const i=+e.target.dataset.reply; const n=NOTIFS[i]; if(!n)return;
+    n.reply=false; UNREAD=Math.max(0,UNREAD-1); toast('Reply sent to '+n.title);
+    renderNotifs(); renderTabs(); }});
+
+/* seek & volume & files inputs */
+$('#seek').addEventListener('input',e=>{ const t=TRACKS[M.i]; M.pos=e.target.value/100*t.dur; renderMusic(); });
+$('#vol').addEventListener('input',e=>setVol(e.target.value/100));
+$('#fileInput').addEventListener('change',e=>{ addFiles(e.target.files); e.target.value=''; });
+const drop=$('#drop');
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer.files.length)addFiles(e.dataTransfer.files); });
+/* drag shelf items out (desktop AirDrop-ish) */
+document.addEventListener('dragstart',e=>{ const el=e.target.closest('[data-act=fileOpen]'); if(!el)return;
+  const f=FILES[+el.dataset.v]; if(f&&e.dataTransfer){ e.dataTransfer.setData('text/plain',f.name);
+    try{e.dataTransfer.setData('DownloadURL',f.type+':'+f.name+':'+URL.createObjectURL(f.file))}catch(_){}}});
+
+/* ================= dictation ================= */
+function dictate(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ $('#askInput').focus(); $('#askInput').placeholder='Dictation unsupported — type instead'; return toast('🎙 unavailable'); }
+  const r=new SR(); r.lang=navigator.language||'en-US'; r.interimResults=true;
+  $('#micBtn').textContent='⏺'; r.onresult=ev=>{ let s=''; for(const res of ev.results)s+=res[0].transcript;
+    $('#askInput').value=s; if(ev.results[ev.results.length-1].isFinal){ omni(s); $('#askInput').value=''; } };
+  r.onend=()=>$('#micBtn').textContent='🎙';
+  r.onerror=()=>{ $('#micBtn').textContent='🎙'; toast('Mic error'); };
+  try{ r.start(); }catch(e){ toast('🎙 busy'); }
+}
+
+/* ================= squat coach ================= */
+setInterval(()=>{ if(!S.squat)return;
+  S.squatCount++; save(); $('#squatCount')&&($('#squatCount').textContent=S.squatCount);
+  hud('🧍 Time to stand'); speak('Time to stand'); notify('Desk coach','🧍 Stand up','Hourly movement nudge');
+},3600000);
+
+/* ================= loop & boot ================= */
+let last=performance.now();
+function loop(ts){ const dt=(ts-last)/1000; last=ts;
+  if(M.playing){ const t=TRACKS[M.i]; M.pos+=dt; if(M.pos>=t.dur){ tSwitch(1); }
+    if(TAB==='music'){ renderMusic();
+      if(M.ana){ const d=new Uint8Array(M.ana.frequencyBinCount); M.ana.getByteFrequencyData(d);
+        $$('#viz i').forEach((b,i)=>{ b.style.height=Math.max(4,(d[i*2]||0)/255*44)+'px'; }); } }
+    renderCompact(); }
+  if(TASK.on&&Math.random()<.1) renderCompact();
+  requestAnimationFrame(loop);
+}
+setInterval(()=>{ // clocks & uptime & pill time
+  $('#clock').textContent=nowT(); $('#sbTime').textContent=nowT();
+  $('#greeting').textContent=(h=>h<5?'Good night':h<12?'Good morning':h<18?'Good afternoon':'Good evening')(new Date().getHours());
+  if(!I.open&&!M.playing&&!T.running&&CALL.state==='idle') renderCompact();
+  if(TAB==='info') renderInfo();
+},1000);
+window.addEventListener('resize',sizeIsland);
+window.addEventListener('online',()=>{renderInfo();hud('🛜 Online')});
+window.addEventListener('offline',()=>{renderInfo();hud('✈️ Offline')});
+
+/* boot */
+document.documentElement.dataset.theme=S.theme;
+$('#vol').value=M.vol*100;
+quoteRefresh(); weatherRefresh(); renderTabs(); renderMusic(); renderClip(); renderFiles();
+renderNotifs(); renderChat(); renderInfo(); renderMore(); renderCompact(); initBattery();
+setTimeout(()=>{ hud('Island ready — tap the pill'); notify('Island','👋 Welcome','Tap the pill. Long-press changes what it shows.'); },900);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
